@@ -21,7 +21,7 @@
   h1 { font-size: 17px; margin: 0; }
   h2 { font-size: 13px; margin: 0 0 6px; color: var(--muted); letter-spacing: .04em; }
   input[type=text] { width: 100%; padding: 6px 8px; border: 1px solid var(--line); border-radius: 4px; font: inherit; }
-  .groups { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .groups { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
   .grp { border: 2px solid var(--line); background: #fff; border-radius: 6px; padding: 6px 4px; cursor: pointer; font: inherit; font-weight: 600; }
   .grp[aria-pressed=true] { border-color: currentColor; background: color-mix(in srgb, currentColor 10%, #fff); }
   .tools { display: grid; gap: 6px; }
@@ -81,7 +81,7 @@
     <div class="tools">
       <button class="tool" data-tool="start">● 出発点（経路ごと）</button>
       <button class="tool" data-tool="route">━ 経路の線を描く</button>
-      <button class="tool" data-tool="shelter">■ 避難場所（全経路共通・1か所）</button>
+      <button class="tool" data-tool="shelter">■ 避難場所（複数置けます）</button>
       <button class="tool" data-tool="hazard">◆ 危険箇所（塀・狭い道など）</button>
       <button class="tool" data-tool="none" aria-pressed="true">✋ 地図を動かすだけ</button>
     </div>
@@ -140,6 +140,7 @@ const GROUPS = {
   A: { name: '経路1', color: '#d6342b', dash: null },
   B: { name: '経路2', color: '#1f5fbf', dash: '12 8' },
   C: { name: '経路3', color: '#e08a00', dash: '1 9' },
+  D: { name: '経路4', color: '#c2185b', dash: '14 7 1 7' },
 };
 const SHELTER_COLOR = '#1d6b4f', HAZARD_COLOR = '#6b2fa3';
 const WALK_KMH = 3;
@@ -204,7 +205,7 @@ function pinIcon(item) {
   if (item.type === 'hazard')
     return L.divIcon({ className: '', iconSize: [26, 26], html: `<div class="pin hazard" style="background:${HAZARD_COLOR}"><span>!</span></div>` });
   const g = GROUPS[item.group];
-  return L.divIcon({ className: '', iconSize: [26, 26], html: `<div class="pin" style="background:${g.color}">${item.group === 'A' ? 1 : item.group === 'B' ? 2 : 3}</div>` });
+  return L.divIcon({ className: '', iconSize: [26, 26], html: `<div class="pin" style="background:${g.color}">${'ABCD'.indexOf(item.group) + 1}</div>` });
 }
 
 function routeLength(latlngs) {
@@ -264,8 +265,8 @@ function renderSummary() {
     const m = routeLength(r.latlngs), min = Math.ceil(m / 1000 / WALK_KMH * 60);
     return `<div class="r"><span style="color:${GROUPS[r.group].color};font-weight:600">${GROUPS[r.group].name}${r.name ? '・' + r.name : ''}</span><span>${Math.round(m)} m／約${min}分</span></div>`;
   });
-  const shelter = state.items.find(i => i.type === 'shelter');
-  const dest = `<div class="r"><span>避難場所</span><span>${shelter ? (shelter.name || '名前未設定') : '未設定'}</span></div>`;
+  const shelters = state.items.filter(i => i.type === 'shelter').map(i => i.name || '名前未設定');
+  const dest = `<div class="r"><span>避難場所</span><span>${shelters.length ? shelters.join('、') : '未設定'}</span></div>`;
   box.innerHTML = dest + (rows.length ? rows.join('') : '<div class="note">まだ経路がありません。</div>');
   updateLegend();
 }
@@ -278,7 +279,7 @@ function updateLegend() {
   const used = new Set(state.items.map(i => i.group).filter(Boolean));
   let h = '';
   for (const [k, g] of Object.entries(GROUPS)) if (used.has(k)) h += `<div><svg width="28" height="8" style="vertical-align:middle;margin-right:6px"><line x1="3" y1="4" x2="25" y2="4" stroke="${g.color}" stroke-width="4" stroke-linecap="round" stroke-dasharray="${g.dash ? g.dash.split(' ').map(n => n / 2).join(' ') : 'none'}"/></svg>${g.name}（●は出発点）</div>`;
-  if (state.items.some(i => i.type === 'shelter')) h += `<div><span class="k" style="background:${SHELTER_COLOR};height:10px;width:10px"></span>避難場所${(state.items.find(i => i.type === 'shelter') || {}).name ? '：' + state.items.find(i => i.type === 'shelter').name : ''}</div>`;
+  if (state.items.some(i => i.type === 'shelter')) h += `<div><span class="k" style="background:${SHELTER_COLOR};height:10px;width:10px"></span>避難場所</div>`;
   if (state.items.some(i => i.type === 'hazard')) h += `<div><span class="k" style="background:${HAZARD_COLOR};height:10px;width:10px"></span>危険箇所（通行注意）</div>`;
   const el = document.getElementById('legend');
   el.innerHTML = h;
@@ -309,7 +310,7 @@ function setHint() {
     none: '地図をドラッグ・拡大して町内の位置を合わせてください。',
     start: `地図をクリックすると「${g}」の出発点を置きます。`,
     route: `「${g}」の経路を描きます。出発点から順に、曲がり角ごとにクリックしてください。最後に「経路を確定」を押すか、最後の点をダブルクリックします。`,
-    shelter: '地図をクリックすると避難場所を置きます。避難場所は全経路で共通の1か所なので、もう一度クリックすると場所が移動します。置いた後に印をクリックして名前を入れてください。',
+    shelter: '地図をクリックすると避難場所を置きます。複数置けます。置いた後に印をクリックして名前を入れてください。',
     hazard: 'ブロック塀・狭い道・川沿いなど、通行に注意が必要な場所をクリックで置きます。',
   }[tool];
   document.getElementById('hint').textContent = t;
@@ -348,12 +349,7 @@ map.on('click', e => {
     state.items = state.items.filter(i => !(i.type === 'start' && i.group === group)); // 出発点は経路ごとに1か所
     state.items.push({ id: uid(), type: 'start', group, name: GROUPS[group].name + ' 出発点', latlng: ll });
     render(); save();
-  } else if (tool === 'shelter') {
-    const old = state.items.find(i => i.type === 'shelter'); // 避難場所は全経路共通の1か所
-    state.items = state.items.filter(i => i.type !== 'shelter');
-    state.items.push({ id: uid(), type: 'shelter', name: old ? old.name : '', latlng: ll });
-    render(); save();
-  } else if (tool === 'hazard') {
+  } else if (tool === 'shelter' || tool === 'hazard') {
     state.items.push({ id: uid(), type: tool, name: '', latlng: ll });
     render(); save();
   }
@@ -387,7 +383,7 @@ document.getElementById('clearYes').onclick = () => { state.items = []; cancelRo
 function apply(s) {
   state = s;
   // 旧版（グループ方式）で付いた名前を経路方式の名前に置き換える
-  state.items.forEach(i => { if (i.name) i.name = i.name.replace(/第([123])グループ 集合場所/, '経路$1 出発点'); });
+  state.items.forEach(i => { if (i.name) i.name = i.name.replace(/第([1234])グループ 集合場所/, '経路$1 出発点'); });
   document.getElementById('title').value = s.title || document.getElementById('title').value;
   if (s.view) map.setView(s.view.center, s.view.zoom);
   render();
