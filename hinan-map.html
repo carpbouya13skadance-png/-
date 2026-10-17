@@ -81,7 +81,7 @@
     <div class="tools">
       <button class="tool" data-tool="start">● 出発点（経路ごと）</button>
       <button class="tool" data-tool="route">━ 経路の線を描く</button>
-      <button class="tool" data-tool="shelter">■ 避難所・避難場所</button>
+      <button class="tool" data-tool="shelter">■ 避難場所（全経路共通・1か所）</button>
       <button class="tool" data-tool="hazard">◆ 危険箇所（塀・狭い道など）</button>
       <button class="tool" data-tool="none" aria-pressed="true">✋ 地図を動かすだけ</button>
     </div>
@@ -136,9 +136,10 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script>
 const GROUPS = {
-  A: { name: '経路1', color: '#d6342b' },
-  B: { name: '経路2', color: '#1f5fbf' },
-  C: { name: '経路3', color: '#e08a00' },
+  // 経路が同じ道で重なっても見分けられるよう、線の種類も変える
+  A: { name: '経路1', color: '#d6342b', dash: null },
+  B: { name: '経路2', color: '#1f5fbf', dash: '12 8' },
+  C: { name: '経路3', color: '#e08a00', dash: '1 9' },
 };
 const SHELTER_COLOR = '#1d6b4f', HAZARD_COLOR = '#6b2fa3';
 const WALK_KMH = 3;
@@ -244,7 +245,7 @@ function render() {
     if (item.type === 'route') {
       const color = GROUPS[item.group].color;
       L.polyline(item.latlngs, { color: '#fff', weight: 9, opacity: .9 }).addTo(itemLayer);
-      const line = L.polyline(item.latlngs, { color, weight: 5 }).addTo(itemLayer);
+      const line = L.polyline(item.latlngs, { color, weight: 5, dashArray: GROUPS[item.group].dash, lineCap: 'round' }).addTo(itemLayer);
       line.bindPopup(() => popupFor(item));
       arrowsFor(item.latlngs, color).forEach(m => m.addTo(itemLayer));
     } else {
@@ -263,7 +264,9 @@ function renderSummary() {
     const m = routeLength(r.latlngs), min = Math.ceil(m / 1000 / WALK_KMH * 60);
     return `<div class="r"><span style="color:${GROUPS[r.group].color};font-weight:600">${GROUPS[r.group].name}${r.name ? '・' + r.name : ''}</span><span>${Math.round(m)} m／約${min}分</span></div>`;
   });
-  box.innerHTML = rows.length ? rows.join('') : '<div class="note">まだ経路がありません。</div>';
+  const shelter = state.items.find(i => i.type === 'shelter');
+  const dest = `<div class="r"><span>避難場所</span><span>${shelter ? (shelter.name || '名前未設定') : '未設定'}</span></div>`;
+  box.innerHTML = dest + (rows.length ? rows.join('') : '<div class="note">まだ経路がありません。</div>');
   updateLegend();
 }
 
@@ -274,8 +277,8 @@ legend.addTo(map);
 function updateLegend() {
   const used = new Set(state.items.map(i => i.group).filter(Boolean));
   let h = '';
-  for (const [k, g] of Object.entries(GROUPS)) if (used.has(k)) h += `<div><span class="k" style="background:${g.color}"></span>${g.name}（●は出発点）</div>`;
-  if (state.items.some(i => i.type === 'shelter')) h += `<div><span class="k" style="background:${SHELTER_COLOR};height:10px;width:10px"></span>避難所・避難場所</div>`;
+  for (const [k, g] of Object.entries(GROUPS)) if (used.has(k)) h += `<div><svg width="28" height="8" style="vertical-align:middle;margin-right:6px"><line x1="3" y1="4" x2="25" y2="4" stroke="${g.color}" stroke-width="4" stroke-linecap="round" stroke-dasharray="${g.dash ? g.dash.split(' ').map(n => n / 2).join(' ') : 'none'}"/></svg>${g.name}（●は出発点）</div>`;
+  if (state.items.some(i => i.type === 'shelter')) h += `<div><span class="k" style="background:${SHELTER_COLOR};height:10px;width:10px"></span>避難場所${(state.items.find(i => i.type === 'shelter') || {}).name ? '：' + state.items.find(i => i.type === 'shelter').name : ''}</div>`;
   if (state.items.some(i => i.type === 'hazard')) h += `<div><span class="k" style="background:${HAZARD_COLOR};height:10px;width:10px"></span>危険箇所（通行注意）</div>`;
   const el = document.getElementById('legend');
   el.innerHTML = h;
@@ -306,7 +309,7 @@ function setHint() {
     none: '地図をドラッグ・拡大して町内の位置を合わせてください。',
     start: `地図をクリックすると「${g}」の出発点を置きます。`,
     route: `「${g}」の経路を描きます。出発点から順に、曲がり角ごとにクリックしてください。最後に「経路を確定」を押すか、最後の点をダブルクリックします。`,
-    shelter: '地図をクリックすると避難所・避難場所を置きます。置いた後にクリックして名前を入れてください。',
+    shelter: '地図をクリックすると避難場所を置きます。避難場所は全経路で共通の1か所なので、もう一度クリックすると場所が移動します。置いた後に印をクリックして名前を入れてください。',
     hazard: 'ブロック塀・狭い道・川沿いなど、通行に注意が必要な場所をクリックで置きます。',
   }[tool];
   document.getElementById('hint').textContent = t;
@@ -345,7 +348,12 @@ map.on('click', e => {
     state.items = state.items.filter(i => !(i.type === 'start' && i.group === group)); // 出発点は経路ごとに1か所
     state.items.push({ id: uid(), type: 'start', group, name: GROUPS[group].name + ' 出発点', latlng: ll });
     render(); save();
-  } else if (tool === 'shelter' || tool === 'hazard') {
+  } else if (tool === 'shelter') {
+    const old = state.items.find(i => i.type === 'shelter'); // 避難場所は全経路共通の1か所
+    state.items = state.items.filter(i => i.type !== 'shelter');
+    state.items.push({ id: uid(), type: 'shelter', name: old ? old.name : '', latlng: ll });
+    render(); save();
+  } else if (tool === 'hazard') {
     state.items.push({ id: uid(), type: tool, name: '', latlng: ll });
     render(); save();
   }
