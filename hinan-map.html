@@ -72,22 +72,22 @@
   </div>
 
   <div>
-    <h2>① グループを選ぶ</h2>
+    <h2>① 経路を選ぶ</h2>
     <div class="groups" id="groups"></div>
   </div>
 
   <div>
     <h2>② 置くものを選んで地図をクリック</h2>
     <div class="tools">
-      <button class="tool" data-tool="start">● 一時集合場所（グループごと）</button>
-      <button class="tool" data-tool="route">━ 避難経路を描く（グループごと）</button>
+      <button class="tool" data-tool="start">● 出発点（経路ごと）</button>
+      <button class="tool" data-tool="route">━ 経路の線を描く</button>
       <button class="tool" data-tool="shelter">■ 避難所・避難場所</button>
       <button class="tool" data-tool="hazard">◆ 危険箇所（塀・狭い道など）</button>
       <button class="tool" data-tool="none" aria-pressed="true">✋ 地図を動かすだけ</button>
     </div>
   </div>
 
-  <div id="hint">「地図を動かすだけ」で町内の位置を合わせてから、グループと置くものを選んでください。</div>
+  <div id="hint">「地図を動かすだけ」で町内の位置を合わせてから、経路と置くものを選んでください。</div>
 
   <div class="row" id="routeCtl" hidden>
     <button class="btn" id="undoPt">1点戻す</button>
@@ -136,9 +136,9 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script>
 const GROUPS = {
-  A: { name: '第1グループ', color: '#d6342b' },
-  B: { name: '第2グループ', color: '#1f5fbf' },
-  C: { name: '第3グループ', color: '#e08a00' },
+  A: { name: '経路1', color: '#d6342b' },
+  B: { name: '経路2', color: '#1f5fbf' },
+  C: { name: '経路3', color: '#e08a00' },
 };
 const SHELTER_COLOR = '#1d6b4f', HAZARD_COLOR = '#6b2fa3';
 const WALK_KMH = 3;
@@ -274,7 +274,7 @@ legend.addTo(map);
 function updateLegend() {
   const used = new Set(state.items.map(i => i.group).filter(Boolean));
   let h = '';
-  for (const [k, g] of Object.entries(GROUPS)) if (used.has(k)) h += `<div><span class="k" style="background:${g.color}"></span>${g.name}の経路・集合場所</div>`;
+  for (const [k, g] of Object.entries(GROUPS)) if (used.has(k)) h += `<div><span class="k" style="background:${g.color}"></span>${g.name}（●は出発点）</div>`;
   if (state.items.some(i => i.type === 'shelter')) h += `<div><span class="k" style="background:${SHELTER_COLOR};height:10px;width:10px"></span>避難所・避難場所</div>`;
   if (state.items.some(i => i.type === 'hazard')) h += `<div><span class="k" style="background:${HAZARD_COLOR};height:10px;width:10px"></span>危険箇所（通行注意）</div>`;
   const el = document.getElementById('legend');
@@ -304,8 +304,8 @@ function setHint() {
   const g = GROUPS[group].name;
   const t = {
     none: '地図をドラッグ・拡大して町内の位置を合わせてください。',
-    start: `地図をクリックすると「${g}」の一時集合場所を置きます。`,
-    route: `「${g}」の経路を描きます。集合場所から順に、曲がり角ごとにクリックしてください。最後に「経路を確定」を押すか、最後の点をダブルクリックします。`,
+    start: `地図をクリックすると「${g}」の出発点を置きます。`,
+    route: `「${g}」の経路を描きます。出発点から順に、曲がり角ごとにクリックしてください。最後に「経路を確定」を押すか、最後の点をダブルクリックします。`,
     shelter: '地図をクリックすると避難所・避難場所を置きます。置いた後にクリックして名前を入れてください。',
     hazard: 'ブロック塀・狭い道・川沿いなど、通行に注意が必要な場所をクリックで置きます。',
   }[tool];
@@ -342,8 +342,8 @@ map.on('click', e => {
     drawing.line.setLatLngs(drawing.latlngs);
     L.circleMarker(ll, { radius: 4, color: GROUPS[drawing.group].color }).addTo(drawing.dots);
   } else if (tool === 'start') {
-    state.items = state.items.filter(i => !(i.type === 'start' && i.group === group)); // 集合場所はグループに1か所
-    state.items.push({ id: uid(), type: 'start', group, name: GROUPS[group].name + ' 集合場所', latlng: ll });
+    state.items = state.items.filter(i => !(i.type === 'start' && i.group === group)); // 出発点は経路ごとに1か所
+    state.items.push({ id: uid(), type: 'start', group, name: GROUPS[group].name + ' 出発点', latlng: ll });
     render(); save();
   } else if (tool === 'shelter' || tool === 'hazard') {
     state.items.push({ id: uid(), type: tool, name: '', latlng: ll });
@@ -378,6 +378,8 @@ document.getElementById('clearYes').onclick = () => { state.items = []; cancelRo
 
 function apply(s) {
   state = s;
+  // 旧版（グループ方式）で付いた名前を経路方式の名前に置き換える
+  state.items.forEach(i => { if (i.name) i.name = i.name.replace(/第([123])グループ 集合場所/, '経路$1 出発点'); });
   document.getElementById('title').value = s.title || document.getElementById('title').value;
   if (s.view) map.setView(s.view.center, s.view.zoom);
   render();
